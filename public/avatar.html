@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="vi" translate="no">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Avatar AI — ChatLawBot</title>
+    <style>
+      :root{font-family:Inter,system-ui,Arial, sans-serif}
+      body{margin:0;background:#0f172a;color:#e6eef8;display:flex;align-items:center;justify-content:center;height:100vh}
+      .card{width:920px;height:560px;background:linear-gradient(180deg,#0b1220 0%, #0f172a 100%);border-radius:16px;box-shadow:0 10px 30px rgba(2,6,23,.6);overflow:hidden;display:flex}
+      .left{flex:1;padding:24px;display:flex;flex-direction:column;gap:12px}
+      .avatar{width:360px;height:360px;border-radius:12px;background:#061223;display:flex;align-items:center;justify-content:center;font-size:18px;color:#8fb0ff}
+      .controls{display:flex;gap:8px}
+      .btn{padding:10px 14px;border-radius:8px;background:#0b57e5;border:none;color:white;cursor:pointer}
+      .transcript{flex:1;background:rgba(255,255,255,0.03);padding:12px;border-radius:8px;overflow:auto}
+      .footer{font-size:13px;color:#9fb4db}
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="left">
+        <h2>Avatar AI — Chat Law Bot</h2>
+        <div class="avatar" id="avatar">👩‍⚖️ Luật Sư Ảo</div>
+        <div class="controls">
+          <button id="btnSpeak" class="btn">Nói (mic)</button>
+          <button id="btnStop" class="btn" style="background:#ef4444">Dừng</button>
+          <button id="btnText" class="btn" style="background:#06b6d4">Gửi văn bản</button>
+        </div>
+        <div class="transcript" id="transcript">Transcript sẽ hiển thị ở đây...</div>
+        <div class="footer">Lưu ý: nội dung tham khảo. Không thay thế tư vấn luật chính thức.</div>
+      </div>
+      <div style="width:1px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);margin:12px 0"></div>
+      <div style="width:360px;padding:24px;display:flex;flex-direction:column;gap:12px;">
+        <label>Nhập câu hỏi</label>
+        <textarea id="userInput" rows="8" style="width:100%;border-radius:8px;padding:8px"></textarea>
+        <label>Chọn giọng đọc</label>
+        <select id="voiceSelect" style="padding:8px;border-radius:8px">
+          <option>Default</option>
+        </select>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="sendBtn" class="btn">Gửi tới AI</button>
+          <div id="status" style="color:#9fb4db;margin-left:8px">Trạng thái: sẵn sàng</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const transcriptEl = document.getElementById('transcript')
+      const avatarEl = document.getElementById('avatar')
+      const btnSpeak = document.getElementById('btnSpeak')
+      const btnStop = document.getElementById('btnStop')
+      const btnText = document.getElementById('btnText')
+      const sendBtn = document.getElementById('sendBtn')
+      const statusEl = document.getElementById('status')
+      const inputEl = document.getElementById('userInput')
+      const voiceSelect = document.getElementById('voiceSelect')
+
+      let voices = []
+      function loadVoices(){
+        voices = speechSynthesis.getVoices() || []
+        voiceSelect.innerHTML = ''
+        voices.forEach((v,i)=>{
+          const opt = document.createElement('option')
+          opt.value = i
+          opt.innerText = v.name + ' — ' + v.lang
+          voiceSelect.appendChild(opt)
+        })
+      }
+      loadVoices()
+      window.speechSynthesis.onvoiceschanged = loadVoices
+
+      function speak(text){
+        if(!text) return
+        const ut = new SpeechSynthesisUtterance(text)
+        const idx = Number(voiceSelect.value)
+        if(voices[idx]) ut.voice = voices[idx]
+        ut.rate = 1
+        ut.pitch = 1
+        speechSynthesis.cancel()
+        speechSynthesis.speak(ut)
+      }
+
+      let recognizer = null
+      if(window.webkitSpeechRecognition || window.SpeechRecognition){
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+        recognizer = new SR()
+        recognizer.lang = 'vi-VN'
+        recognizer.interimResults = false
+        recognizer.onresult = (e)=>{
+          const txt = Array.from(e.results).map(r=>r[0].transcript).join('')
+          transcriptEl.innerText = 'Bạn: ' + txt
+          inputEl.value = txt
+        }
+        recognizer.onerror = (e)=>{ console.warn('STT error', e); statusEl.innerText = 'STT lỗi' }
+      }
+
+      btnSpeak.onclick = ()=>{ if(recognizer){ recognizer.start(); statusEl.innerText='Đang nghe...' } else { alert('Trình duyệt không hỗ trợ STT') } }
+      btnStop.onclick = ()=>{ speechSynthesis.cancel(); if(recognizer) recognizer.stop(); statusEl.innerText='Dừng' }
+
+      async function sendToAI(text){
+        try{
+          statusEl.innerText = 'Đang gửi...'
+          const form = new FormData()
+          form.append('message', text)
+          form.append('jurisdiction', 'Vietnam')
+          const res = await fetch('/api/chat', { method: 'POST', body: form })
+          const j = await res.json()
+          const reply = j.reply || j.error || 'Không có phản hồi'
+          transcriptEl.innerText = 'AI: ' + reply
+          avatarEl.innerText = '👩‍⚖️'
+          speak(reply)
+          statusEl.innerText = 'Xong'
+        }catch(err){
+          console.error(err)
+          transcriptEl.innerText = 'Lỗi kết nối máy chủ.'
+          statusEl.innerText = 'Lỗi'
+        }
+      }
+
+      sendBtn.onclick = ()=>{ const t = inputEl.value.trim(); if(!t) return alert('Nhập câu hỏi'); sendToAI(t) }
+      btnText.onclick = ()=>{ const t = inputEl.value.trim(); if(!t) return alert('Nhập câu hỏi'); transcriptEl.innerText = 'Bạn: '+t; speak('Đang gửi câu hỏi tới trợ lý.'); sendToAI(t) }
+    </script>
+  </body>
+</html>
